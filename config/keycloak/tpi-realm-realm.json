@@ -1,0 +1,122 @@
+{
+  "id": "tpi-realm",
+  "realm": "tpi-realm",
+  "enabled": true,
+  "registrationAllowed": true,
+  "loginWithEmailAllowed": false,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "registrationEmailAsUsername": false,
+  "verifyEmail": true, 
+  
+  "clients": [
+    {
+      "clientId": "tpi-backend",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:8080/*"
+      ],
+      "webOrigins": [
+        "*"
+      ],
+      "attributes": {
+        "access.token.lifespan": "300"
+      }
+    }
+  ],
+  
+  "roles": {
+    "realm": [
+      {
+        "name": "ADMIN",
+        "description": "Administrador del sistema"
+      },
+      {
+        "name": "OPERADOR",
+        "description": "Operador/Administrador"
+      },
+      {
+        "name": "CLIENTE",
+        "description": "Usuario cliente final"
+      },
+      {
+        "name": "TRANSPORTISTA",
+        "description": "Usuario transportista"
+      }
+    ]
+  },
+  
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@tpi.com",
+      "emailVerified": true,
+      "firstName": "Admin",
+      "lastName": "TPI",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["ADMIN", "OPERADOR"],
+      "clientRoles": {
+        "realm-management": ["view-users", "view-clients", "view-realm", "view-identity-providers"]
+      }
+    },
+    {
+      "username": "operador1",
+      "enabled": true,
+      "email": "operador@tpi.com",
+      "emailVerified": true,
+      "firstName": "Operador",
+      "lastName": "Sistema",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "operador123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["OPERADOR"]
+    },
+    {
+      "username": "cliente",
+      "enabled": true,
+      "email": "cliente@tpi.com",
+      "emailVerified": true,
+      "firstName": "Juan",
+      "lastName": "Cliente",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "cliente123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["CLIENTE"]
+    },
+    {
+      "username": "transportista",
+      "enabled": true,
+      "email": "transportista@tpi.com",
+      "emailVerified": true,
+      "firstName": "Pedro",
+      "lastName": "Transportista",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "transportista123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["TRANSPORTISTA"]
+    }
+  ]
+}

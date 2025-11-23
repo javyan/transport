@@ -1,0 +1,1704 @@
+﻿{
+    "info":  {
+                 "_postman_id":  "tpi-transportes-2025",
+                 "name":  "Sistema Transportes TPI - Full Workflow",
+                 "description":  "Collection completa para probar el sistema de transporte con Keycloak OAuth2 y API Gateway.\n\n## 🔐 Autenticación\n- Todas las requests pasan por el API Gateway (localhost:8080)\n- Autenticación con Keycloak usando OAuth2\n- 4 usuarios disponibles: admin, operador1, cliente, transportista\n\n## 📋 Workflow Completo\n1. **Auth**: Obtener token de Keycloak\n2. **Solicitudes**: Gestión de clientes, contenedores y solicitudes\n3. **Logística**: Rutas, tramos, asignación de recursos\n4. **Tracking**: Seguimiento de eventos\n5. **Facturación**: Tarifas, facturas y estadías\n\n## 🚀 Inicio Rápido\n1. Ejecutar: docker-compose up -d\n2. Esperar que todos los servicios estén UP\n3. Ejecutar request de Auth para obtener token\n4. El token se guarda automáticamente en variable de collection\n5. Ejecutar las requests en orden",
+                 "schema":  "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+             },
+    "auth":  {
+                 "type":  "bearer",
+                 "bearer":  [
+                                {
+                                    "key":  "token",
+                                    "value":  "{{access_token}}",
+                                    "type":  "string"
+                                }
+                            ]
+             },
+    "event":  [
+                  {
+                      "listen":  "prerequest",
+                      "script":  {
+                                     "exec":  [
+                                                  "// Auto-renovación de token JWT antes de expirar",
+                                                  "const tokenExpiry = pm.collectionVariables.get(\u0027token_expiry\u0027);",
+                                                  "const now = Date.now();",
+                                                  "",
+                                                  "// Renovar si no existe token o expira en menos de 30 segundos",
+                                                  "if (!tokenExpiry || now \u003e= (tokenExpiry - 30000)) {",
+                                                  "    console.log(\u0027🔄 Renovando token JWT...\u0027);",
+                                                  "    ",
+                                                  "    pm.sendRequest({",
+                                                  "        url: pm.collectionVariables.get(\u0027keycloak_url\u0027) + \u0027/realms/tpi-realm/protocol/openid-connect/token\u0027,",
+                                                  "        method: \u0027POST\u0027,",
+                                                  "        header: {",
+                                                  "            \u0027Content-Type\u0027: \u0027application/x-www-form-urlencoded\u0027",
+                                                  "        },",
+                                                  "        body: {",
+                                                  "            mode: \u0027urlencoded\u0027,",
+                                                  "            urlencoded: [",
+                                                  "                {key: \u0027client_id\u0027, value: \u0027tpi-backend\u0027},",
+                                                  "                {key: \u0027grant_type\u0027, value: \u0027password\u0027},",
+                                                  "                {key: \u0027username\u0027, value: pm.collectionVariables.get(\u0027username\u0027) || \u0027admin\u0027},",
+                                                  "                {key: \u0027password\u0027, value: pm.collectionVariables.get(\u0027password\u0027) || \u0027admin123\u0027}",
+                                                  "            ]",
+                                                  "        }",
+                                                  "    }, function (err, res) {",
+                                                  "        if (!err \u0026\u0026 res.code === 200) {",
+                                                  "            const jsonData = res.json();",
+                                                  "            pm.collectionVariables.set(\u0027access_token\u0027, jsonData.access_token);",
+                                                  "            pm.collectionVariables.set(\u0027token_expiry\u0027, Date.now() + (jsonData.expires_in * 1000));",
+                                                  "            console.log(\u0027✅ Token renovado automáticamente (válido por \u0027 + jsonData.expires_in + \u0027s)\u0027);",
+                                                  "        } else {",
+                                                  "            console.error(\u0027❌ Error renovando token:\u0027, err || res.code);",
+                                                  "        }",
+                                                  "    });",
+                                                  "} else {",
+                                                  "    const secondsLeft = Math.floor((tokenExpiry - now) / 1000);",
+                                                  "    console.log(\u0027✓ Token válido por \u0027 + secondsLeft + \u0027s más\u0027);",
+                                                  "}"
+                                              ],
+                                     "type":  "text/javascript"
+                                 }
+                  }
+              ],
+    "variable":  [
+                     {
+                         "key":  "gateway_url",
+                         "value":  "http://localhost:8080",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "keycloak_url",
+                         "value":  "http://localhost:9090",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "access_token",
+                         "value":  "",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "token_expiry",
+                         "value":  "",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "username",
+                         "value":  "admin",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "password",
+                         "value":  "admin123",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "solicitud_id",
+                         "value":  "",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "tramo_id",
+                         "value":  "",
+                         "type":  "string"
+                     },
+                     {
+                         "key":  "factura_id",
+                         "value":  "",
+                         "type":  "string"
+                     }
+                 ],
+    "item":  [
+                 {
+                     "name":  "🔐 1. Autenticación",
+                     "item":  [
+                                  {
+                                      "name":  "Login - Admin",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                                                                                    "    pm.collectionVariables.set(\"token_expiry\", Date.now() + (jsonData.expires_in * 1000));",
+                                                                                    "    pm.collectionVariables.set(\"username\", \"admin\");",
+                                                                                    "    pm.collectionVariables.set(\"password\", \"admin123\");",
+                                                                                    "    console.log(\"✅ Token guardado (válido por \" + jsonData.expires_in + \"s): \" + jsonData.access_token.substring(0, 50) + \"...\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "auth":  {
+                                                                   "type":  "noauth"
+                                                               },
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/x-www-form-urlencoded"
+                                                                     }
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "urlencoded",
+                                                                   "urlencoded":  [
+                                                                                      {
+                                                                                          "key":  "client_id",
+                                                                                          "value":  "tpi-backend",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "grant_type",
+                                                                                          "value":  "password",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "username",
+                                                                                          "value":  "admin",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "password",
+                                                                                          "value":  "admin123",
+                                                                                          "type":  "text"
+                                                                                      }
+                                                                                  ]
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{keycloak_url}}/realms/tpi-realm/protocol/openid-connect/token",
+                                                                  "host":  [
+                                                                               "{{keycloak_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "realms",
+                                                                               "tpi-realm",
+                                                                               "protocol",
+                                                                               "openid-connect",
+                                                                               "token"
+                                                                           ]
+                                                              },
+                                                      "description":  "Obtiene token JWT para usuario Admin (rol: ADMIN, OPERADOR)"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Login - Operador",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                                                                                    "    pm.collectionVariables.set(\"token_expiry\", Date.now() + (jsonData.expires_in * 1000));",
+                                                                                    "    pm.collectionVariables.set(\"username\", \"operador1\");",
+                                                                                    "    pm.collectionVariables.set(\"password\", \"operador123\");",
+                                                                                    "    console.log(\"✅ Token guardado (válido por \" + jsonData.expires_in + \"s)\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "auth":  {
+                                                                   "type":  "noauth"
+                                                               },
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "urlencoded",
+                                                                   "urlencoded":  [
+                                                                                      {
+                                                                                          "key":  "client_id",
+                                                                                          "value":  "tpi-backend",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "grant_type",
+                                                                                          "value":  "password",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "username",
+                                                                                          "value":  "operador1",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "password",
+                                                                                          "value":  "operador123",
+                                                                                          "type":  "text"
+                                                                                      }
+                                                                                  ]
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{keycloak_url}}/realms/tpi-realm/protocol/openid-connect/token",
+                                                                  "host":  [
+                                                                               "{{keycloak_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "realms",
+                                                                               "tpi-realm",
+                                                                               "protocol",
+                                                                               "openid-connect",
+                                                                               "token"
+                                                                           ]
+                                                              },
+                                                      "description":  "Obtiene token para usuario Operador (rol: OPERADOR)"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Login - Transportista",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                                                                                    "    pm.collectionVariables.set(\"token_expiry\", Date.now() + (jsonData.expires_in * 1000));",
+                                                                                    "    pm.collectionVariables.set(\"username\", \"transportista\");",
+                                                                                    "    pm.collectionVariables.set(\"password\", \"transportista123\");",
+                                                                                    "    console.log(\"✅ Token guardado (válido por \" + jsonData.expires_in + \"s)\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "auth":  {
+                                                                   "type":  "noauth"
+                                                               },
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "urlencoded",
+                                                                   "urlencoded":  [
+                                                                                      {
+                                                                                          "key":  "client_id",
+                                                                                          "value":  "tpi-backend",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "grant_type",
+                                                                                          "value":  "password",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "username",
+                                                                                          "value":  "transportista",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "password",
+                                                                                          "value":  "transportista123",
+                                                                                          "type":  "text"
+                                                                                      }
+                                                                                  ]
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{keycloak_url}}/realms/tpi-realm/protocol/openid-connect/token",
+                                                                  "host":  [
+                                                                               "{{keycloak_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "realms",
+                                                                               "tpi-realm",
+                                                                               "protocol",
+                                                                               "openid-connect",
+                                                                               "token"
+                                                                           ]
+                                                              },
+                                                      "description":  "Obtiene token para usuario Transportista (rol: TRANSPORTISTA)"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  }
+                              ],
+                     "description":  "Endpoints para obtener tokens JWT de Keycloak"
+                 },
+                 {
+                     "name":  "📦 2. Solicitudes",
+                     "item":  [
+                                  {
+                                      "name":  "Clientes",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todos los Clientes",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes/clientes",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes",
+                                                                                                "clientes"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los clientes registrados"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Obtener Cliente por ID",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes/cliente/1",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes",
+                                                                                                "cliente/1"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Obtiene información de un cliente específico"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Contenedores",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todos los Contenedores",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes/contenedores",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes",
+                                                                                                "contenedores"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los contenedores disponibles"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Crear Contenedor",
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+                                                                                      {
+                                                                                          "key":  "Content-Type",
+                                                                                          "value":  "application/json"
+                                                                                      }
+                                                                                  ],
+                                                                       "body":  {
+                                                                                    "mode":  "raw",
+                                                                                    "raw":  "{\n  \"numeroContenedor\": \"CONT-2025-001\",\n  \"tipo\": \"40_PIES\",\n  \"latActual\": -34.6037,\n  \"lonActual\": -58.3816,\n  \"observaciones\": \"Contenedor nuevo para carga general\"\n}"
+                                                                                },
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes/contenedor",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes",
+                                                                                                "contenedor"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Crea un nuevo contenedor"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Solicitudes",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todas las Solicitudes",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todas las solicitudes de transporte"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Crear Solicitud",
+                                                       "event":  [
+                                                                     {
+                                                                         "listen":  "test",
+                                                                         "script":  {
+                                                                                        "exec":  [
+                                                                                                     "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                                     "    var jsonData = pm.response.json();",
+                                                                                                     "    pm.collectionVariables.set(\"solicitud_id\", jsonData.id);",
+                                                                                                     "    console.log(\"✅ Solicitud creada con ID: \" + jsonData.id);",
+                                                                                                     "}"
+                                                                                                 ],
+                                                                                        "type":  "text/javascript"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+                                                                                      {
+                                                                                          "key":  "Content-Type",
+                                                                                          "value":  "application/json"
+                                                                                      }
+                                                                                  ],
+                                                                       "body":  {
+                                                                                    "mode":  "raw",
+                                                                                    "raw":  "{\n  \"cliente\": {\n    \"nombreCompleto\": \"Juan Pérez\",\n    \"email\": \"juan.perez@ejemplo.com\",\n    \"telefono\": \"+541145678900\",\n    \"direccion\": \"Av. Corrientes 1234, CABA\"\n  },\n  \"contenedor\": {\n    \"numeroIdentificacion\": \"CONT-2025-001\",\n    \"pesoKg\": 15000.0,\n    \"volumenM3\": 33.0,\n    \"tipo\": \"REFRIGERADO\",\n    \"observaciones\": \"Requiere temperatura controlada -18°C\"\n  },\n  \"origenDireccion\": \"Buenos Aires, Argentina\",\n  \"destinoDireccion\": \"Mendoza, Argentina\"\n}"
+                                                                                },
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Crea una nueva solicitud de transporte (estado inicial: PENDIENTE)"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Actualizar Estado Solicitud",
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+                                                                                      {
+                                                                                          "key":  "Content-Type",
+                                                                                          "value":  "application/json"
+                                                                                      }
+                                                                                  ],
+                                                                       "body":  {
+                                                                                    "mode":  "raw",
+                                                                                    "raw":  "{\n  \"estado\": \"CONFIRMADA\"\n}"
+                                                                                },
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/solicitudes/{{solicitud_id}}/estado",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "solicitudes",
+                                                                                                "{{solicitud_id}}/estado"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Actualiza el estado de una solicitud. Estados válidos: PENDIENTE, CONFIRMADA, EN_PROGRESO, FINALIZADA, CANCELADA"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  }
+                              ],
+                     "description":  "Gestión de clientes, contenedores y solicitudes de transporte"
+                 },
+                 {
+                     "name":  "🚛 3. Logística",
+                     "item":  [
+                                  {
+                                      "name":  "Transportistas",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Transportistas",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/transportistas",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "transportistas"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los transportistas disponibles"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Camiones",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Camiones",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/camiones",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "camiones"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los camiones de la flota"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Depósitos",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Depósitos",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/depositos",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "depositos"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los depósitos disponibles"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Rutas",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Calcular Ruta Tentativa",
+                                                       "event":  [
+                                                                     {
+                                                                         "listen":  "test",
+                                                                         "script":  {
+                                                                                        "exec":  [
+                                                                                                     "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                                     "    var jsonData = pm.response.json();",
+                                                                                                     "    console.log(\"✅ Ruta calculada:\");",
+                                                                                                     "    console.log(\"   Distancia Total: \" + jsonData.distanciaTotalKm + \" km\");",
+                                                                                                     "    console.log(\"   Tiempo Estimado: \" + jsonData.tiempoEstimadoHoras + \" horas\");",
+                                                                                                     "    console.log(\"   Costo Estimado: $\" + jsonData.costoEstimado);",
+                                                                                                     "    console.log(\"   Tramos: \" + jsonData.tramos.length);",
+                                                                                                     "}"
+                                                                                                 ],
+                                                                                        "type":  "text/javascript"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/rutas/calcular?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Mendoza, Argentina",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "rutas",
+                                                                                                "calcular?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Mendoza, Argentina"
+                                                                                            ],
+                                                                                   "query":  [
+                                                                                                 {
+                                                                                                     "key":  "solicitudId",
+                                                                                                     "value":  "{{solicitud_id}}"
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "key":  "origenDireccion",
+                                                                                                     "value":  "Buenos Aires, Argentina"
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "key":  "destinoDireccion",
+                                                                                                     "value":  "Mendoza, Argentina"
+                                                                                                 }
+                                                                                             ]
+                                                                               },
+                                                                       "description":  "Calcula una ruta tentativa usando Google Maps Distance Matrix API. Incluye cálculo de distancia, tiempo estimado y costo."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Tramos",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todos los Tramos",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los tramos creados"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Listar Tramos por Solicitud",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/solicitud/{{solicitud_id}}",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "solicitud",
+                                                                                                "{{solicitud_id}}"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todos los tramos de una solicitud específica"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Listar Tramos por Transportista",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/transportista/1",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "transportista",
+                                                                                                "1"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista tramos asignados a un transportista"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Crear Tramos desde Ruta",
+                                                       "event":  [
+                                                                     {
+                                                                         "listen":  "test",
+                                                                         "script":  {
+                                                                                        "exec":  [
+                                                                                                     "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                                     "    var jsonData = pm.response.json();",
+                                                                                                     "    if (jsonData.length \u003e 0) {",
+                                                                                                     "        pm.collectionVariables.set(\"tramo_id\", jsonData[0].id);",
+                                                                                                     "        console.log(\"✅ Tramos creados: \" + jsonData.length);",
+                                                                                                     "        console.log(\"   Primer tramo ID: \" + jsonData[0].id);",
+                                                                                                     "    }",
+                                                                                                     "}"
+                                                                                                 ],
+                                                                                        "type":  "text/javascript"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/crear?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Mendoza, Argentina",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "crear?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Mendoza, Argentina"
+                                                                                            ],
+                                                                                   "query":  [
+                                                                                                 {
+                                                                                                     "key":  "solicitudId",
+                                                                                                     "value":  "{{solicitud_id}}"
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "key":  "origenDireccion",
+                                                                                                     "value":  "Buenos Aires, Argentina"
+                                                                                                 },
+                                                                                                 {
+                                                                                                     "key":  "destinoDireccion",
+                                                                                                     "value":  "Mendoza, Argentina"
+                                                                                                 }
+                                                                                             ]
+                                                                               },
+                                                                       "description":  "Crea tramos en la BD basándose en una ruta calculada. Actualiza estado de solicitud a CONFIRMADA automáticamente."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Asignar Camión y Transportista",
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+                                                                                      {
+                                                                                          "key":  "Content-Type",
+                                                                                          "value":  "application/json"
+                                                                                      }
+                                                                                  ],
+                                                                       "body":  {
+                                                                                    "mode":  "raw",
+                                                                                    "raw":  "{\n  \"tramoId\": {{tramo_id}},\n  \"camionId\": 1,\n  \"transportistaId\": 1,\n  \"pesoKg\": 7500.0,\n  \"volumenM3\": 40.0\n}"
+                                                                                },
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/asignar",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "asignar"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Asigna un camión y transportista a un tramo específico. Valida disponibilidad de recursos."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Iniciar Tramo",
+                                                       "request":  {
+                                                                       "method":  "PATCH",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/{{tramo_id}}/iniciar",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "{{tramo_id}}",
+                                                                                                "iniciar"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Inicia un tramo (usado por transportistas). Cambia estado a EN_PROGRESO."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Finalizar Tramo",
+                                                       "request":  {
+                                                                       "method":  "PATCH",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/logistica/tramos/{{tramo_id}}/finalizar",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "logistica",
+                                                                                                "tramos",
+                                                                                                "{{tramo_id}}",
+                                                                                                "finalizar"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Finaliza un tramo y libera camión (DISPONIBLE) y transportista. Si todos los tramos están finalizados, actualiza solicitud a FINALIZADA y genera factura."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  }
+                              ],
+                     "description":  "Gestión de transportistas, camiones, depósitos, rutas y tramos"
+                 },
+                 {
+                     "name":  "📍 4. Tracking",
+                     "item":  [
+                                  {
+                                      "name":  "Listar Todos los Eventos",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos"
+                                                                           ]
+                                                              },
+                                                      "description":  "Lista todos los eventos de tracking registrados"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Listar Eventos por Solicitud",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos/solicitud/{{solicitud_id}}",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos",
+                                                                               "solicitud",
+                                                                               "{{solicitud_id}}"
+                                                                           ]
+                                                              },
+                                                      "description":  "Lista eventos de una solicitud específica"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Listar Eventos por Tramo",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos/tramo/{{tramo_id}}",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos",
+                                                                               "tramo",
+                                                                               "{{tramo_id}}"
+                                                                           ]
+                                                              },
+                                                      "description":  "Lista eventos de un tramo específico"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Listar Eventos por Tipo",
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos/tipo/EN_TRANSITO",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos",
+                                                                               "tipo",
+                                                                               "EN_TRANSITO"
+                                                                           ]
+                                                              },
+                                                      "description":  "Filtra eventos por tipo. Tipos: TRAMO_INICIADO, EN_TRANSITO, LLEGADA, INCIDENTE, DEMORA"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "Registrar Evento",
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"solicitudId\": {{solicitud_id}},\n  \"tramoId\": {{tramo_id}},\n  \"tipoEvento\": \"EN_TRANSITO\",\n  \"descripcion\": \"Camión pasando por peaje Ruta 7\",\n  \"lat\": -34.7,\n  \"lon\": -58.5,\n  \"fechaHora\": \"2025-11-23T14:30:00\"\n}"
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos/registrar",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos",
+                                                                               "registrar"
+                                                                           ]
+                                                              },
+                                                      "description":  "Registra un nuevo evento de tracking con ubicación GPS"
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  }
+                              ],
+                     "description":  "Sistema de seguimiento en tiempo real con eventos georreferenciados"
+                 },
+                 {
+                     "name":  "💰 5. Facturación",
+                     "item":  [
+                                  {
+                                      "name":  "Tarifas",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todas las Tarifas",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/facturacion/tarifas",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "facturacion",
+                                                                                                "tarifas"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todas las tarifas configuradas en el sistema"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Estadías",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todas las Estadías",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/facturacion/estadias",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "facturacion",
+                                                                                                "estadias"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todas las estadías de contenedores en depósitos"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  },
+                                  {
+                                      "name":  "Facturas",
+                                      "item":  [
+                                                   {
+                                                       "name":  "Listar Todas las Facturas",
+                                                       "request":  {
+                                                                       "method":  "GET",
+                                                                       "header":  [
+
+                                                                                  ],
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/facturacion/facturas",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "facturacion",
+                                                                                                "facturas"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Lista todas las facturas generadas"
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   },
+                                                   {
+                                                       "name":  "Generar Factura",
+                                                       "event":  [
+                                                                     {
+                                                                         "listen":  "test",
+                                                                         "script":  {
+                                                                                        "exec":  [
+                                                                                                     "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                                     "    var jsonData = pm.response.json();",
+                                                                                                     "    pm.collectionVariables.set(\"factura_id\", jsonData.id);",
+                                                                                                     "    console.log(\"✅ Factura generada:\");",
+                                                                                                     "    console.log(\"   Número: \" + jsonData.numeroFactura);",
+                                                                                                     "    console.log(\"   Total: $\" + jsonData.total);",
+                                                                                                     "    console.log(\"   Estado: \" + jsonData.estado);",
+                                                                                                     "}"
+                                                                                                 ],
+                                                                                        "type":  "text/javascript"
+                                                                                    }
+                                                                     }
+                                                                 ],
+                                                       "request":  {
+                                                                       "method":  "POST",
+                                                                       "header":  [
+                                                                                      {
+                                                                                          "key":  "Content-Type",
+                                                                                          "value":  "application/json"
+                                                                                      }
+                                                                                  ],
+                                                                       "body":  {
+                                                                                    "mode":  "raw",
+                                                                                    "raw":  "{\n  \"solicitudId\": {{solicitud_id}}\n}"
+                                                                                },
+                                                                       "url":  {
+                                                                                   "raw":  "{{gateway_url}}/api/facturacion/facturas/generar",
+                                                                                   "host":  [
+                                                                                                "{{gateway_url}}"
+                                                                                            ],
+                                                                                   "path":  [
+                                                                                                "api",
+                                                                                                "facturacion",
+                                                                                                "facturas",
+                                                                                                "generar"
+                                                                                            ]
+                                                                               },
+                                                                       "description":  "Genera una factura para una solicitud finalizada. Calcula costos reales basados en tramos completados."
+                                                                   },
+                                                       "response":  [
+
+                                                                    ]
+                                                   }
+                                               ]
+                                  }
+                              ],
+                     "description":  "Gestión de tarifas, estadías en depósitos y facturación"
+                 },
+                 {
+                     "name":  "🔄 6. Workflow Completo",
+                     "item":  [
+                                  {
+                                      "name":  "PASO 1 - Login Admin",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    pm.collectionVariables.set(\"access_token\", jsonData.access_token);",
+                                                                                    "    console.log(\"✅ PASO 1 COMPLETADO: Token obtenido\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "auth":  {
+                                                                   "type":  "noauth"
+                                                               },
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "urlencoded",
+                                                                   "urlencoded":  [
+                                                                                      {
+                                                                                          "key":  "client_id",
+                                                                                          "value":  "tpi-backend",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "grant_type",
+                                                                                          "value":  "password",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "username",
+                                                                                          "value":  "admin",
+                                                                                          "type":  "text"
+                                                                                      },
+                                                                                      {
+                                                                                          "key":  "password",
+                                                                                          "value":  "admin123",
+                                                                                          "type":  "text"
+                                                                                      }
+                                                                                  ]
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{keycloak_url}}/realms/tpi-realm/protocol/openid-connect/token",
+                                                                  "host":  [
+                                                                               "{{keycloak_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "realms",
+                                                                               "tpi-realm",
+                                                                               "protocol",
+                                                                               "openid-connect",
+                                                                               "token"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 2 - Crear Solicitud",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    pm.collectionVariables.set(\"solicitud_id\", jsonData.id);",
+                                                                                    "    console.log(\"✅ PASO 2 COMPLETADO: Solicitud creada (ID: \" + jsonData.id + \")\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"cliente\": {\n    \"nombreCompleto\": \"Carlos Gonzalez\",\n    \"email\": \"carlos.gonzalez@test.com\",\n    \"telefono\": \"+541156789012\",\n    \"direccion\": \"Av. Libertador 5678, CABA\"\n  },\n  \"contenedor\": {\n    \"numeroIdentificacion\": \"CONT-WF-2025-001\",\n    \"pesoKg\": 12000.0,\n    \"volumenM3\": 28.0,\n    \"tipo\": \"ESTANDAR\",\n    \"observaciones\": \"Workflow completo de prueba\"\n  },\n  \"origenDireccion\": \"Buenos Aires, Argentina\",\n  \"destinoDireccion\": \"Cordoba, Argentina\"\n}"
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/solicitudes",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "solicitudes"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 3 - Calcular Ruta",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    console.log(\"✅ PASO 3 COMPLETADO: Ruta calculada\");",
+                                                                                    "    console.log(\"   Distancia: \" + jsonData.distanciaTotalKm + \" km\");",
+                                                                                    "    console.log(\"   Tiempo: \" + jsonData.tiempoEstimadoHoras + \" horas\");",
+                                                                                    "    console.log(\"   Costo: $\" + jsonData.costoEstimado);",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/logistica/rutas/calcular?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Córdoba, Argentina",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "logistica",
+                                                                               "rutas",
+                                                                               "calcular?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Córdoba, Argentina"
+                                                                           ],
+                                                                  "query":  [
+                                                                                {
+                                                                                    "key":  "solicitudId",
+                                                                                    "value":  "{{solicitud_id}}"
+                                                                                },
+                                                                                {
+                                                                                    "key":  "origenDireccion",
+                                                                                    "value":  "Buenos Aires, Argentina"
+                                                                                },
+                                                                                {
+                                                                                    "key":  "destinoDireccion",
+                                                                                    "value":  "Córdoba, Argentina"
+                                                                                }
+                                                                            ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 4 - Crear Tramos",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    if (jsonData.length \u003e 0) {",
+                                                                                    "        pm.collectionVariables.set(\"tramo_id\", jsonData[0].id);",
+                                                                                    "        console.log(\"✅ PASO 4 COMPLETADO: \" + jsonData.length + \" tramos creados\");",
+                                                                                    "        console.log(\"   Primer tramo ID: \" + jsonData[0].id);",
+                                                                                    "    }",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/logistica/tramos/crear?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Córdoba, Argentina",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "logistica",
+                                                                               "tramos",
+                                                                               "crear?solicitudId={{solicitud_id}}\u0026origenDireccion=Buenos Aires, Argentina\u0026destinoDireccion=Córdoba, Argentina"
+                                                                           ],
+                                                                  "query":  [
+                                                                                {
+                                                                                    "key":  "solicitudId",
+                                                                                    "value":  "{{solicitud_id}}"
+                                                                                },
+                                                                                {
+                                                                                    "key":  "origenDireccion",
+                                                                                    "value":  "Buenos Aires, Argentina"
+                                                                                },
+                                                                                {
+                                                                                    "key":  "destinoDireccion",
+                                                                                    "value":  "Córdoba, Argentina"
+                                                                                }
+                                                                            ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 5 - Asignar Recursos",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    console.log(\"✅ PASO 5 COMPLETADO: Camión y transportista asignados\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"tramoId\": {{tramo_id}},\n  \"camionId\": 1,\n  \"transportistaId\": 1,\n  \"pesoKg\": 7500.0,\n  \"volumenM3\": 40.0\n}"
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/logistica/tramos/asignar",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "logistica",
+                                                                               "tramos",
+                                                                               "asignar"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 6 - Iniciar Tramo",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    console.log(\"✅ PASO 6 COMPLETADO: Tramo iniciado\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "PATCH",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/logistica/tramos/{{tramo_id}}/iniciar",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "logistica",
+                                                                               "tramos",
+                                                                               "{{tramo_id}}",
+                                                                               "iniciar"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 7 - Registrar Evento Tracking",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                    "    console.log(\"✅ PASO 7 COMPLETADO: Evento registrado\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+                                                                     {
+                                                                         "key":  "Content-Type",
+                                                                         "value":  "application/json"
+                                                                     }
+                                                                 ],
+                                                      "body":  {
+                                                                   "mode":  "raw",
+                                                                   "raw":  "{\n  \"solicitudId\": {{solicitud_id}},\n  \"tramoId\": {{tramo_id}},\n  \"tipoEvento\": \"EN_TRANSITO\",\n  \"descripcion\": \"Workflow test - en ruta\",\n  \"lat\": -34.5,\n  \"lon\": -58.4,\n  \"fechaHora\": \"2025-11-23T12:00:00\"\n}"
+                                                               },
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/tracking/eventos/registrar",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "tracking",
+                                                                               "eventos",
+                                                                               "registrar"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 8 - Finalizar Tramo",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    console.log(\"✅ PASO 8 COMPLETADO: Tramo finalizado\");",
+                                                                                    "    console.log(\"   Recursos liberados\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "PATCH",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/logistica/tramos/{{tramo_id}}/finalizar",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "logistica",
+                                                                               "tramos",
+                                                                               "{{tramo_id}}",
+                                                                               "finalizar"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 9 - Verificar Solicitud Finalizada",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    if (jsonData.estado === \u0027FINALIZADA\u0027) {",
+                                                                                    "        console.log(\"✅ PASO 9 COMPLETADO: Solicitud FINALIZADA\");",
+                                                                                    "        console.log(\"   Costo Real: $\" + jsonData.costoReal);",
+                                                                                    "    }",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "GET",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/solicitudes/{{solicitud_id}}",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "solicitudes",
+                                                                               "{{solicitud_id}}"
+                                                                           ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  },
+                                  {
+                                      "name":  "PASO 10 - Generar Factura",
+                                      "event":  [
+                                                    {
+                                                        "listen":  "test",
+                                                        "script":  {
+                                                                       "exec":  [
+                                                                                    "if (pm.response.code === 201 || pm.response.code === 200) {",
+                                                                                    "    var jsonData = pm.response.json();",
+                                                                                    "    console.log(\"✅ PASO 10 COMPLETADO: Factura generada\");",
+                                                                                    "    console.log(\"   Número: \" + jsonData.numeroFactura);",
+                                                                                    "    console.log(\"   Total: $\" + jsonData.total);",
+                                                                                    "    console.log(\"\");",
+                                                                                    "    console.log(\"🎉 WORKFLOW COMPLETO FINALIZADO EXITOSAMENTE\");",
+                                                                                    "}"
+                                                                                ],
+                                                                       "type":  "text/javascript"
+                                                                   }
+                                                    }
+                                                ],
+                                      "request":  {
+                                                      "method":  "POST",
+                                                      "header":  [
+
+                                                                 ],
+                                                      "url":  {
+                                                                  "raw":  "{{gateway_url}}/api/facturacion/facturas/generar?solicitudId={{solicitud_id}}",
+                                                                  "host":  [
+                                                                               "{{gateway_url}}"
+                                                                           ],
+                                                                  "path":  [
+                                                                               "api",
+                                                                               "facturacion",
+                                                                               "facturas",
+                                                                               "generar"
+                                                                           ],
+                                                                  "query":  [
+                                                                                {
+                                                                                    "key":  "solicitudId",
+                                                                                    "value":  "{{solicitud_id}}"
+                                                                                }
+                                                                            ]
+                                                              }
+                                                  },
+                                      "response":  [
+
+                                                   ]
+                                  }
+                              ],
+                     "description":  "Secuencia completa desde solicitud hasta facturación. Ejecutar en orden para probar el flujo end-to-end del sistema."
+                 }
+             ]
+}
