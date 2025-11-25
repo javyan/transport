@@ -622,6 +622,185 @@
 					}
 				}
 			]
+		},
+		{
+			"name": "💰 6. Facturación",
+			"item": [
+				{
+					"name": "Tarifas",
+					"item": [
+						{
+							"name": "Obtener Tarifa Vigente",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/tarifas/vigente",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "tarifas", "vigente"]
+								},
+								"description": "Retorna la tarifa actualmente vigente con todos los valores de cargo."
+							}
+						},
+						{
+							"name": "Listar Todas las Tarifas",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/tarifas",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "tarifas"]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Facturas",
+					"item": [
+						{
+							"name": "Generar Factura (Automático)",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"if (pm.response.code === 200) {",
+											"    const response = pm.response.json();",
+											"    pm.collectionVariables.set('factura_id', response.id);",
+											"    console.log('✅ Factura generada: ID =', response.id);",
+											"    console.log('💵 Total:', response.total);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/facturas/generar?solicitudId={{solicitud_id}}",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "facturas", "generar"],
+									"query": [
+										{
+											"key": "solicitudId",
+											"value": "{{solicitud_id}}"
+										}
+									]
+								},
+								"description": "Genera la factura consultando automáticamente los tramos desde ms-logistica.\n\n**Fórmula:**\n- Cargo Gestión = Base + (cantidad_tramos × cargo_por_tramo)\n- Costo Transporte = Σ(distancia × costo_km_camion)\n- Costo Combustible = Σ(distancia × consumo_camion × precio_litro)\n- Estadías = Σ(días × costo_depósito)\n- Impuestos = Subtotal × 21%"
+							}
+						},
+						{
+							"name": "Obtener Factura por Solicitud",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/facturas/solicitud/{{solicitud_id}}",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "facturas", "solicitud", "{{solicitud_id}}"]
+								},
+								"description": "Consulta la factura asociada a una solicitud específica."
+							}
+						},
+						{
+							"name": "Listar Todas las Facturas",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/facturas",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "facturas"]
+								}
+							}
+						}
+					]
+				},
+				{
+					"name": "Estadías en Depósito",
+					"item": [
+						{
+							"name": "Registrar Entrada a Depósito",
+							"event": [
+								{
+									"listen": "test",
+									"script": {
+										"exec": [
+											"if (pm.response.code === 200) {",
+											"    const response = pm.response.json();",
+											"    pm.collectionVariables.set('estadia_id', response.id);",
+											"    console.log('✅ Entrada registrada: Estadía ID =', response.id);",
+											"}"
+										],
+										"type": "text/javascript"
+									}
+								}
+							],
+							"request": {
+								"method": "POST",
+								"header": [
+									{
+										"key": "Content-Type",
+										"value": "application/json"
+									}
+								],
+								"body": {
+									"mode": "raw",
+									"raw": "{\n  \"contenedorId\": 1,\n  \"depositoId\": 5,\n  \"costoDia\": 3000.0,\n  \"observaciones\": \"Entrada por optimización de ruta\"\n}"
+								},
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/estadias/registrar-entrada",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "estadias", "registrar-entrada"]
+								},
+								"description": "Registra cuando un contenedor ingresa a un depósito. Inicia el cómputo de estadía."
+							}
+						},
+						{
+							"name": "Registrar Salida de Depósito",
+							"request": {
+								"method": "POST",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/estadias/{{estadia_id}}/registrar-salida",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "estadias", "{{estadia_id}}", "registrar-salida"]
+								},
+								"description": "Registra la salida del contenedor. Calcula automáticamente:\n- días_estadia = diferencia en días\n- costo_total = días × costo_dia"
+							}
+						},
+						{
+							"name": "Listar Estadías por Contenedor",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/estadias/contenedor/1",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "estadias", "contenedor", "1"]
+								}
+							}
+						},
+						{
+							"name": "Listar Todas las Estadías",
+							"request": {
+								"method": "GET",
+								"header": [],
+								"url": {
+									"raw": "{{gateway_url}}/api/facturacion/estadias",
+									"host": ["{{gateway_url}}"],
+									"path": ["api", "facturacion", "estadias"]
+								}
+							}
+						}
+					]
+				}
+			]
 		}
 	]
 }

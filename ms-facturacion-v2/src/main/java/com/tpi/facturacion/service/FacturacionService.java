@@ -74,9 +74,22 @@ public class FacturacionService {
                 .sum();
         log.info("Costo de combustible: ${} (precio/litro: ${})", costoCombustible, tarifa.getPrecioCombustibleLitro());
         
-        // 4. Costo de Estadías (si existen estadías finalizadas para esta solicitud)
-        // Por ahora 0, se calculará cuando se registren estadías
+        // 4. Costo de Estadías - Obtener estadías FINALIZADAS del contenedor
         Double costoEstadias = 0.0;
+        try {
+            // Obtener contenedorId de la solicitud
+            SolicitudDTO solicitud = solicitudClient.obtenerSolicitud(solicitudId);
+            if (solicitud.getContenedorId() != null) {
+                List<EstadiaDeposito> estadias = estadiaDepositoRepository
+                        .findByContenedorIdAndEstado(solicitud.getContenedorId(), "FINALIZADA");
+                costoEstadias = estadias.stream()
+                        .mapToDouble(e -> e.getCostoTotal() != null ? e.getCostoTotal() : 0.0)
+                        .sum();
+                log.info("💰 Estadías encontradas: {} | Costo total: ${}", estadias.size(), costoEstadias);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ No se pudieron obtener estadías: {}", e.getMessage());
+        }
         
         // Subtotal
         Double subtotal = cargoGestion + costoTransporte + costoCombustible + costoEstadias;
@@ -173,8 +186,20 @@ public class FacturacionService {
                                   tarifa.getPrecioCombustibleLitro())
                 .sum();
         
-        // 4. Costo de Estadías (por ahora 0)
+        // 4. Costo de Estadías - Obtener estadías FINALIZADAS del contenedor
         Double costoEstadias = 0.0;
+        try {
+            if (solicitud.getContenedorId() != null) {
+                List<EstadiaDeposito> estadias = estadiaDepositoRepository
+                        .findByContenedorIdAndEstado(solicitud.getContenedorId(), "FINALIZADA");
+                costoEstadias = estadias.stream()
+                        .mapToDouble(e -> e.getCostoTotal() != null ? e.getCostoTotal() : 0.0)
+                        .sum();
+                log.info("💰 Estadías encontradas: {} | Costo total: ${}", estadias.size(), costoEstadias);
+            }
+        } catch (Exception e) {
+            log.warn("⚠️ No se pudieron obtener estadías: {}", e.getMessage());
+        }
         
         // Subtotal
         Double subtotal = cargoGestion + costoTransporte + costoCombustible + costoEstadias;

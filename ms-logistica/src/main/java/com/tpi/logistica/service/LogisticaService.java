@@ -1,5 +1,7 @@
 package com.tpi.logistica.service;
 
+import com.tpi.logistica.client.FacturacionClient;
+import com.tpi.logistica.client.FacturaDTO;
 import com.tpi.logistica.client.SolicitudClient;
 import com.tpi.logistica.client.SolicitudDTO;
 import com.tpi.logistica.dto.*;
@@ -11,7 +13,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,6 +30,10 @@ public class LogisticaService {
     private final TransportistaRepository transportistaRepository;
     private final GoogleMapsService googleMapsService;
     private final SolicitudClient solicitudClient;
+    private final FacturacionClient facturacionClient;
+    
+    // Mapa para rastrear estadías activas por contenedor
+    private final Map<Long, Long> estadiasActivas = new HashMap<>();
     
     /**
      * Calcula rutas tentativas para una solicitud
@@ -226,6 +234,30 @@ public class LogisticaService {
         tramo.setFechaInicio(LocalDateTime.now());
         tramo.setFechaActualizacion(LocalDateTime.now());
         
+        // SI EL ORIGEN ES DEPOSITO → Registrar SALIDA de estadía
+        if ("DEPOSITO".equals(tramo.getOrigenTipo()) && tramo.getOrigenId() != null) {
+            try {
+                // Obtener contenedorId de la solicitud
+                SolicitudDTO solicitud = solicitudClient.obtenerSolicitud(tramo.getSolicitudId());
+                Long contenedorId = solicitud.getContenedor() != null ? solicitud.getContenedor().getId() : null;
+                
+                if (contenedorId != null) {
+                    // Buscar estadía activa y registrar salida
+                    Long estadiaId = estadiasActivas.get(contenedorId);
+                    if (estadiaId != null) {
+                        log.info("📤 Registrando SALIDA de depósito {} para contenedor {}", tramo.getOrigenId(), contenedorId);
+                        EstadiaResponseDTO estadia = facturacionClient.registrarSalidaDeposito(estadiaId);
+                        log.info("✅ Estadía registrada: {} días | Costo: ${}", estadia.getDiasEstadia(), estadia.getCostoTotal());
+                        estadiasActivas.remove(contenedorId);
+                    } else {
+                        log.warn("⚠️ No se encontró estadía activa para contenedor {}", contenedorId);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("❌ Error al registrar salida de depósito: {}", e.getMessage());
+            }
+        }
+        
         // Actualizar estado del camión
         Camion camion = camionRepository.findById(tramo.getCamionId())
                 .orElseThrow(() -> new RuntimeException("Camión no encontrado"));
@@ -291,6 +323,34 @@ public class LogisticaService {
         Tramo actualizado = tramoRepository.save(tramo);
         log.info("✅ Tramo finalizado. Estado: FINALIZADO");
         
+        // SI EL DESTINO ES DEPOSITO → Registrar ENTRADA de estadía
+        if ("DEPOSITO".equals(tramo.getDestinoTipo()) && tramo.getDestinoId() != null) {
+            try {
+                // Obtener contenedorId de la solicitud
+                SolicitudDTO solicitud = solicitudClient.obtenerSolicitud(tramo.getSolicitudId());
+                Long contenedorId = solicitud.getContenedor() != null ? solicitud.getContenedor().getId() : null;
+                
+                if (contenedorId != null) {
+                    // Obtener costo diario del depósito
+                    Deposito deposito = depositoRepository.findById(tramo.getDestinoId())
+                            .orElseThrow(() -> new RuntimeException("Depósito no encontrado"));
+                    
+                    log.info("📥 Registrando ENTRADA a depósito {} para contenedor {}", tramo.getDestinoId(), contenedorId);
+                    EstadiaRequestDTO request = EstadiaRequestDTO.builder()
+                            .contenedorId(contenedorId)
+                            .depositoId(tramo.getDestinoId())
+                            .costoDia(deposito.getCostoDia())
+                            .build();
+                    
+                    EstadiaResponseDTO estadia = facturacionClient.registrarEntradaDeposito(request);
+                    estadiasActivas.put(contenedorId, estadia.getId());
+                    log.info("✅ Estadía registrada con ID: {} | Costo por día: ${}", estadia.getId(), estadia.getCostoDia());
+                }
+            } catch (Exception e) {
+                log.error("❌ Error al registrar entrada a depósito: {}", e.getMessage());
+            }
+        }
+        
         // Verificar si todos los tramos de la solicitud están finalizados
         List<Tramo> todosLosTramos = tramoRepository.findBySolicitudId(tramo.getSolicitudId());
         boolean todosFinalizados = todosLosTramos.stream()
@@ -318,6 +378,18 @@ public class LogisticaService {
                 solicitudClient.finalizarSolicitud(tramo.getSolicitudId(), costoRealTotal, tiempoRealTotal);
                 log.info("✅ Solicitud {} finalizada exitosamente. Costo real: ${}, Tiempo real: {} horas", 
                         tramo.getSolicitudId(), costoRealTotal, tiempoRealTotal);
+                
+                // Generar factura automáticamente
+                try {
+                    log.info("💰 Generando factura automáticamente para solicitud {}...", tramo.getSolicitudId());
+                    FacturaDTO factura = facturacionClient.generarFactura(tramo.getSolicitudId());
+                    log.info("✅ Factura generada exitosamente: {} | Total: ${}", 
+                            factura.getNumeroFactura(), factura.getTotal());
+                } catch (Exception e) {
+                    log.error("❌ Error al generar factura para solicitud {}: {}", 
+                            tramo.getSolicitudId(), e.getMessage());
+                    // No lanzamos la excepción para que el tramo se marque como finalizado de todas formas
+                }
             } catch (Exception e) {
                 log.error("❌ Error al finalizar solicitud {}: {}", tramo.getSolicitudId(), e.getMessage());
             }
