@@ -37,17 +37,28 @@ public class GoogleMapsService {
         log.info("Origen: {} | Destino: {}", origenDireccion, destinoDireccion);
         
         try {
-            // Llamada a Google Maps Distance Matrix API con direcciones
-            var response = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .queryParam("origins", origenDireccion)
-                            .queryParam("destinations", destinoDireccion)
-                            .queryParam("key", apiKey)
-                            .queryParam("units", "metric")
-                            .build())
+            // URL hardcodeada para pruebas
+            String url = String.format(
+                "https://maps.googleapis.com/maps/api/distancematrix/json?destinations=%s&origins=%s&units=metric&key=AIzaSyAiyCVNTvz48QRM0VkSkxzW40Vl3mlqprk",
+                java.net.URLEncoder.encode(destinoDireccion, "UTF-8"),
+                java.net.URLEncoder.encode(origenDireccion, "UTF-8")
+            );
+            
+            log.info("🌍 URL completaxxxxx: {}", url);
+            
+            // Llamada a Google Maps Distance Matrix API con URL completa
+            String responseBody = WebClient.create()
+                    .get()
+                    .uri(url)
                     .retrieve()
-                    .bodyToMono(DistanceMatrixResponse.class)
+                    .bodyToMono(String.class)
                     .block();
+
+            log.info("📦 Response JSON raw:\n{}", responseBody);
+            
+            // Deserializar la respuesta
+            var objectMapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var response = objectMapper.readValue(responseBody, DistanceMatrixResponse.class);
             
             // Validar respuesta
             if (response == null || !"OK".equals(response.status)) {
@@ -153,6 +164,43 @@ public class GoogleMapsService {
         return Math.round(tiempoHoras * 100.0) / 100.0;
     }
     
+    /**
+     * Obtiene las coordenadas (lat, lon) de una dirección usando Google Geocoding API.
+     * 
+     * @param direccion Dirección completa
+     * @return Array [latitud, longitud] o null si no se puede obtener
+     */
+    public double[] obtenerCoordenadas(String direccion) {
+        try {
+            String url = String.format(
+                "https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=AIzaSyAiyCVNTvz48QRM0VkSkxzW40Vl3mlqprk",
+                java.net.URLEncoder.encode(direccion, "UTF-8")
+            );
+            
+            var response = WebClient.create()
+                    .get()
+                    .uri(url)
+                    .retrieve()
+                    .bodyToMono(GeocodingResponse.class)
+                    .block();
+            
+            if (response != null && "OK".equals(response.status) && 
+                response.results != null && !response.results.isEmpty()) {
+                
+                var location = response.results.get(0).geometry.location;
+                log.info("📍 Coordenadas de '{}': [{}, {}]", direccion, location.lat, location.lng);
+                return new double[]{location.lat, location.lng};
+            }
+            
+            log.warn("⚠️ No se pudieron obtener coordenadas para: {}", direccion);
+            return null;
+            
+        } catch (Exception e) {
+            log.error("❌ Error al obtener coordenadas de '{}': {}", direccion, e.getMessage());
+            return null;
+        }
+    }
+    
     // ===== DTOs para Distance Matrix API =====
     
     @lombok.Data
@@ -186,5 +234,30 @@ public class GoogleMapsService {
     public static class Duration {
         private String text;
         private Integer value; // segundos
+    }
+    
+    // ===== DTOs para Geocoding API =====
+    
+    @lombok.Data
+    public static class GeocodingResponse {
+        private java.util.List<GeocodingResult> results;
+        private String status;
+    }
+    
+    @lombok.Data
+    public static class GeocodingResult {
+        private Geometry geometry;
+        private String formatted_address;
+    }
+    
+    @lombok.Data
+    public static class Geometry {
+        private Location location;
+    }
+    
+    @lombok.Data
+    public static class Location {
+        private Double lat;
+        private Double lng;
     }
 }

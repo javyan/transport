@@ -1,6 +1,7 @@
 package com.tpi.logistica.service;
 
 import com.tpi.logistica.client.SolicitudClient;
+import com.tpi.logistica.client.SolicitudDTO;
 import com.tpi.logistica.dto.*;
 import com.tpi.logistica.entity.*;
 import com.tpi.logistica.repository.*;
@@ -127,14 +128,26 @@ public class LogisticaService {
     }
     
     /**
-     * Asigna un camión y transportista a un tramo
+     * Asigna un camión y transportista a un tramo.
+     * Obtiene el peso y volumen del contenedor de la solicitud automáticamente.
      */
-    public TramoDTO asignarCamion(Long tramoId, Long camionId, Long transportistaId, Double pesoKg, Double volumenM3) {
-        log.info("Asignando camión ID={} y transportista ID={} a tramo ID={} (carga: {}kg, {}m3)", 
-                camionId, transportistaId, tramoId, pesoKg, volumenM3);
+    public TramoDTO asignarCamion(Long tramoId, Long camionId, Long transportistaId) {
+        log.info("Asignando camión ID={} y transportista ID={} a tramo ID={}", 
+                camionId, transportistaId, tramoId);
         
         Tramo tramo = tramoRepository.findById(tramoId)
                 .orElseThrow(() -> new RuntimeException("Tramo no encontrado con ID: " + tramoId));
+        
+        // Obtener datos del contenedor de la solicitud
+        SolicitudDTO solicitud = solicitudClient.obtenerSolicitud(tramo.getSolicitudId());
+        if (solicitud.getContenedor() == null) {
+            throw new RuntimeException("La solicitud no tiene contenedor asociado");
+        }
+        
+        Double pesoKg = solicitud.getContenedor().getPesoKg();
+        Double volumenM3 = solicitud.getContenedor().getVolumenM3();
+        
+        log.info("Datos del contenedor obtenidos: {}kg, {}m3", pesoKg, volumenM3);
         
         Camion camion = camionRepository.findById(camionId)
                 .orElseThrow(() -> new RuntimeException("Camión no encontrado con ID: " + camionId));

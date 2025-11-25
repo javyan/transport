@@ -2,6 +2,7 @@ package com.tpi.solicitudes.controller;
 
 import com.tpi.solicitudes.dto.*;
 import com.tpi.solicitudes.client.FacturaDTO;
+import com.tpi.solicitudes.client.RutaTentativaDTO;
 import com.tpi.solicitudes.service.SolicitudService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -223,5 +224,20 @@ public class SolicitudController {
     public ResponseEntity<List<ContenedorDTO>> listarTodosContenedores() {
         List<ContenedorDTO> contenedores = solicitudService.listarTodosContenedores();
         return ResponseEntity.ok(contenedores);
+    }
+    
+    @GetMapping("/{id}/rutas")
+    @Operation(
+        summary = "Obtener todas las rutas tentativas de una solicitud",
+        description = "Devuelve todas las rutas calculadas (DIRECTA, UN_DEPOSITO, MULTIPLES_DEPOSITOS) para que el operador elija. Rol: OPERADOR"
+    )
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Rutas encontradas"),
+        @ApiResponse(responseCode = "404", description = "Solicitud no encontrada")
+    })
+    public ResponseEntity<List<RutaTentativaDTO>> obtenerRutasSolicitud(
+            @Parameter(description = "ID de la solicitud") @PathVariable Long id) {
+        List<RutaTentativaDTO> rutas = solicitudService.obtenerRutasSolicitud(id);
+        return ResponseEntity.ok(rutas);
     }
 }

@@ -16,4 +16,16 @@ public class SolicitudDTO {
     private String origenDireccion;
     private String destinoDireccion;
     private String estado;
+    private ContenedorDTO contenedor;
+    
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class ContenedorDTO {
+        private Long id;
+        private Double pesoKg;
+        private Double volumenM3;
+    }
 }

@@ -38,7 +38,7 @@ public class RutaService {
         
         List<RutaDTO> rutasTentativas = new ArrayList<>();
         
-        // 1. RUTA DIRECTA (sin depósitos)
+        // 1. RUTA DIRECTA (siempre se calcula)
         RutaDTO rutaDirecta = calcularRutaDirecta(solicitudId, origenDireccion, destinoDireccion);
         if (rutaDirecta != null) {
             rutasTentativas.add(rutaDirecta);
@@ -48,9 +48,13 @@ public class RutaService {
                     rutaDirecta.getTiempoEstimadoHoras());
         }
         
-        // 2. RUTA CON UN DEPÓSITO (si la distancia es > 500km)
-        if (rutaDirecta != null && rutaDirecta.getDistanciaTotal() > 500) {
-            RutaDTO rutaConDeposito = calcularRutaConUnDeposito(solicitudId, origenDireccion, destinoDireccion);
+        // 2. DETERMINAR ESTRATEGIA SEGÚN DISTANCIA
+        Double distanciaDirecta = rutaDirecta != null ? rutaDirecta.getDistanciaTotal() : 0;
+        
+        if (distanciaDirecta > 500 && distanciaDirecta <= 1000) {
+            // 500-1000km: 1 DEPÓSITO
+            log.info("📍 Distancia {}km → Estrategia: 1 DEPÓSITO", distanciaDirecta);
+            RutaDTO rutaConDeposito = calcularRutaConDepositos(solicitudId, origenDireccion, destinoDireccion, 1);
             if (rutaConDeposito != null) {
                 rutasTentativas.add(rutaConDeposito);
                 log.info("✅ Ruta con 1 depósito: {}km, ${}, {}hs", 
@@ -58,17 +62,27 @@ public class RutaService {
                         rutaConDeposito.getCostoTotalEstimado(), 
                         rutaConDeposito.getTiempoEstimadoHoras());
             }
-        }
-        
-        // 3. RUTA CON MÚLTIPLES DEPÓSITOS (si distancia > 1000km)
-        if (rutaDirecta != null && rutaDirecta.getDistanciaTotal() > 1000) {
-            RutaDTO rutaMultiple = calcularRutaConMultiplesDepositos(solicitudId, origenDireccion, destinoDireccion);
-            if (rutaMultiple != null) {
-                rutasTentativas.add(rutaMultiple);
-                log.info("✅ Ruta con múltiples depósitos: {}km, ${}, {}hs", 
-                        rutaMultiple.getDistanciaTotal(), 
-                        rutaMultiple.getCostoTotalEstimado(), 
-                        rutaMultiple.getTiempoEstimadoHoras());
+        } else if (distanciaDirecta > 1000 && distanciaDirecta <= 1500) {
+            // 1000-1500km: 2 DEPÓSITOS
+            log.info("📍 Distancia {}km → Estrategia: 2 DEPÓSITOS", distanciaDirecta);
+            RutaDTO rutaCon2Depositos = calcularRutaConDepositos(solicitudId, origenDireccion, destinoDireccion, 2);
+            if (rutaCon2Depositos != null) {
+                rutasTentativas.add(rutaCon2Depositos);
+                log.info("✅ Ruta con 2 depósitos: {}km, ${}, {}hs", 
+                        rutaCon2Depositos.getDistanciaTotal(), 
+                        rutaCon2Depositos.getCostoTotalEstimado(), 
+                        rutaCon2Depositos.getTiempoEstimadoHoras());
+            }
+        } else if (distanciaDirecta > 1500) {
+            // +1500km: 3 DEPÓSITOS
+            log.info("📍 Distancia {}km → Estrategia: 3 DEPÓSITOS", distanciaDirecta);
+            RutaDTO rutaCon3Depositos = calcularRutaConDepositos(solicitudId, origenDireccion, destinoDireccion, 3);
+            if (rutaCon3Depositos != null) {
+                rutasTentativas.add(rutaCon3Depositos);
+                log.info("✅ Ruta con 3 depósitos: {}km, ${}, {}hs", 
+                        rutaCon3Depositos.getDistanciaTotal(), 
+                        rutaCon3Depositos.getCostoTotalEstimado(), 
+                        rutaCon3Depositos.getTiempoEstimadoHoras());
             }
         }
         
@@ -81,7 +95,8 @@ public class RutaService {
      */
     private RutaDTO calcularRutaDirecta(Long solicitudId, String origen, String destino) {
         Double distancia = googleMapsService.calcularDistancia(origen, destino);
-        if (distancia == null) {
+        log.info("Distancia x: {}", distancia);
+        if (distancia == null) {            
             distancia = 700.0; // Fallback
         }
         
@@ -108,39 +123,106 @@ public class RutaService {
     }
     
     /**
-     * Calcula ruta con un depósito intermedio
+     * Calcula ruta con N depósitos intermedios.
+     * 1. Usa Haversine para SELECCIONAR los mejores depósitos (matemática pura)
+     * 2. Calcula distancias REALES con Google Maps para cada tramo de la ruta elegida
      */
-    private RutaDTO calcularRutaConUnDeposito(Long solicitudId, String origen, String destino) {
-        // Buscar el depósito más conveniente (por ahora, el primero disponible)
+    private RutaDTO calcularRutaConDepositos(Long solicitudId, String origen, String destino, int cantidadDepositos) {
         List<Deposito> depositosActivos = depositoRepository.findByEstado("ACTIVO");
-        if (depositosActivos.isEmpty()) {
-            log.warn("⚠️ No hay depósitos activos para calcular ruta con depósito");
+        if (depositosActivos.size() < cantidadDepositos) {
+            log.warn("⚠️ No hay suficientes depósitos activos ({} requeridos, {} disponibles)", 
+                    cantidadDepositos, depositosActivos.size());
             return null;
         }
         
-        Deposito deposito = depositosActivos.get(0); // Simplificado: tomar el primero
+        // Obtener coordenadas de origen y destino
+        double[] coordOrigen = googleMapsService.obtenerCoordenadas(origen);
+        double[] coordDestino = googleMapsService.obtenerCoordenadas(destino);
         
-        Double distancia1 = googleMapsService.calcularDistancia(origen, deposito.getDireccion());
-        Double distancia2 = googleMapsService.calcularDistancia(deposito.getDireccion(), destino);
+        if (coordOrigen == null || coordDestino == null) {
+            log.warn("⚠️ No se pudieron obtener coordenadas de origen/destino");
+            return null;
+        }
         
-        if (distancia1 == null) distancia1 = 350.0;
-        if (distancia2 == null) distancia2 = 350.0;
+        log.info("🧮 FASE 1: Seleccionando {} depósitos óptimos usando Haversine", cantidadDepositos);
         
-        Double distanciaTotal = distancia1 + distancia2;
-        Double tiempoTotal = googleMapsService.calcularTiempoEstimado(distanciaTotal) + 4.0; // +4hs por parada
-        Double costoEstimado = (distanciaTotal * 150.0) + (deposito.getCostoDia() * 1); // 1 día de estadía
+        // FASE 1: Seleccionar los N mejores depósitos usando SOLO Haversine
+        List<Deposito> depositosSeleccionados = seleccionarDepositosOptimos(
+            depositosActivos, coordOrigen, coordDestino, cantidadDepositos
+        );
+        
+        if (depositosSeleccionados == null || depositosSeleccionados.size() != cantidadDepositos) {
+            log.warn("⚠️ No se pudieron seleccionar {} depósitos óptimos", cantidadDepositos);
+            return null;
+        }
+        
+        log.info("📍 FASE 2: Calculando distancias REALES con Google Maps para cada tramo");
+        
+        // FASE 2: Calcular distancias REALES con Google Maps para los tramos de la ruta elegida
+        List<Double> distanciasTramos = new ArrayList<>();
+        List<String> nombresDepositos = new ArrayList<>();
+        Double distanciaTotal = 0.0;
+        Double costoDepositosTotal = 0.0;
+        
+        // Tramo 1: Origen → Primer depósito
+        String puntoActual = origen;
+        for (int i = 0; i < depositosSeleccionados.size(); i++) {
+            Deposito deposito = depositosSeleccionados.get(i);
+            Double distTramo = googleMapsService.calcularDistancia(puntoActual, deposito.getDireccion());
+            if (distTramo == null) distTramo = 200.0; // Fallback
+            
+            distanciasTramos.add(distTramo);
+            distanciaTotal += distTramo;
+            costoDepositosTotal += deposito.getCostoDia();
+            nombresDepositos.add(deposito.getNombre());
+            
+            log.info("  📍 Tramo {}: {} → {} = {}km (Google Maps)", 
+                    i + 1, 
+                    i == 0 ? "Origen" : depositosSeleccionados.get(i-1).getNombre(),
+                    deposito.getNombre(),
+                    distTramo);
+            
+            puntoActual = deposito.getDireccion();
+        }
+        
+        // Último tramo: Último depósito → Destino
+        Double distUltimoTramo = googleMapsService.calcularDistancia(puntoActual, destino);
+        if (distUltimoTramo == null) distUltimoTramo = 200.0;
+        
+        distanciasTramos.add(distUltimoTramo);
+        distanciaTotal += distUltimoTramo;
+        
+        log.info("  📍 Tramo {}: {} → Destino = {}km (Google Maps)", 
+                cantidadDepositos + 1,
+                depositosSeleccionados.get(depositosSeleccionados.size() - 1).getNombre(),
+                distUltimoTramo);
+        
+        log.info("✅ Distancia total REAL (por carretera): {}km", distanciaTotal);
+        
+        // Calcular tiempo y costo
+        Double tiempoTotal = googleMapsService.calcularTiempoEstimado(distanciaTotal) + (cantidadDepositos * 4.0);
+        Double costoEstimado = (distanciaTotal * 150.0) + costoDepositosTotal;
+        
+        // Construir lista de IDs de depósitos
+        String depositosIds = depositosSeleccionados.stream()
+                .map(d -> d.getId().toString())
+                .collect(Collectors.joining(","));
+        
+        // Determinar estrategia
+        String estrategia = cantidadDepositos == 1 ? "UN_DEPOSITO" : "MULTIPLES_DEPOSITOS";
         
         Ruta ruta = Ruta.builder()
                 .solicitudId(solicitudId)
                 .estado("TENTATIVA")
-                .cantidadTramos(2)
-                .depositosIntermedios(deposito.getId().toString())
+                .cantidadTramos(cantidadDepositos + 1)
+                .depositosIntermedios(depositosIds)
                 .distanciaTotal(distanciaTotal)
                 .costoTotalEstimado(costoEstimado)
                 .tiempoEstimadoHoras(tiempoTotal)
-                .estrategia("UN_DEPOSITO")
+                .estrategia(estrategia)
                 .fechaCreacion(LocalDateTime.now())
-                .observaciones("Ruta con parada en: " + deposito.getNombre())
+                .observaciones(String.format("Ruta con %d parada(s): %s", 
+                        cantidadDepositos, String.join(", ", nombresDepositos)))
                 .build();
         
         Ruta guardada = rutaRepository.save(ruta);
@@ -149,50 +231,73 @@ public class RutaService {
     }
     
     /**
-     * Calcula ruta con múltiples depósitos
+     * Selecciona los N depósitos óptimos usando SOLO cálculo Haversine (matemática pura).
+     * Algoritmo greedy: selecciona el depósito más cercano al siguiente punto objetivo.
      */
-    private RutaDTO calcularRutaConMultiplesDepositos(Long solicitudId, String origen, String destino) {
-        List<Deposito> depositosActivos = depositoRepository.findByEstado("ACTIVO");
-        if (depositosActivos.size() < 2) {
-            log.warn("⚠️ No hay suficientes depósitos para calcular ruta con múltiples paradas");
+    private List<Deposito> seleccionarDepositosOptimos(List<Deposito> depositosDisponibles, 
+                                                        double[] coordOrigen, 
+                                                        double[] coordDestino, 
+                                                        int cantidadDepositos) {
+        List<Deposito> depositosSeleccionados = new ArrayList<>();
+        List<Deposito> depositosRestantes = new ArrayList<>(depositosDisponibles);
+        
+        // Filtrar depósitos sin coordenadas
+        depositosRestantes.removeIf(d -> d.getLat() == null || d.getLon() == null);
+        
+        if (depositosRestantes.size() < cantidadDepositos) {
+            log.warn("⚠️ No hay suficientes depósitos con coordenadas válidas");
             return null;
         }
         
-        // Simplificado: tomar los primeros 2 depósitos
-        Deposito deposito1 = depositosActivos.get(0);
-        Deposito deposito2 = depositosActivos.get(1);
+        double[] puntoActual = coordOrigen;
         
-        Double dist1 = googleMapsService.calcularDistancia(origen, deposito1.getDireccion());
-        Double dist2 = googleMapsService.calcularDistancia(deposito1.getDireccion(), deposito2.getDireccion());
-        Double dist3 = googleMapsService.calcularDistancia(deposito2.getDireccion(), destino);
+        for (int i = 0; i < cantidadDepositos; i++) {
+            Deposito mejorDeposito = null;
+            Double menorDistancia = Double.MAX_VALUE;
+            
+            // Encontrar el depósito más cercano al punto actual
+            for (Deposito deposito : depositosRestantes) {
+                double distancia = calcularDistanciaHaversine(
+                    puntoActual[0], puntoActual[1],
+                    deposito.getLat(), deposito.getLon()
+                );
+                
+                if (distancia < menorDistancia) {
+                    menorDistancia = distancia;
+                    mejorDeposito = deposito;
+                }
+            }
+            
+            if (mejorDeposito == null) break;
+            
+            depositosSeleccionados.add(mejorDeposito);
+            depositosRestantes.remove(mejorDeposito);
+            puntoActual = new double[]{mejorDeposito.getLat(), mejorDeposito.getLon()};
+            
+            log.info("  ✅ Depósito {} seleccionado: {} (Haversine: {:.0f}km desde punto anterior)", 
+                    i + 1, mejorDeposito.getNombre(), menorDistancia);
+        }
         
-        if (dist1 == null) dist1 = 350.0;
-        if (dist2 == null) dist2 = 300.0;
-        if (dist3 == null) dist3 = 350.0;
+        return depositosSeleccionados.size() == cantidadDepositos ? depositosSeleccionados : null;
+    }
+    
+    /**
+     * Calcula distancia Haversine entre dos puntos geográficos (en km).
+     * Fórmula: https://en.wikipedia.org/wiki/Haversine_formula
+     */
+    private Double calcularDistanciaHaversine(Double lat1, Double lon1, Double lat2, Double lon2) {
+        final int RADIO_TIERRA_KM = 6371;
         
-        Double distanciaTotal = dist1 + dist2 + dist3;
-        Double tiempoTotal = googleMapsService.calcularTiempoEstimado(distanciaTotal) + 8.0; // +8hs por 2 paradas
-        Double costoEstimado = (distanciaTotal * 150.0) + 
-                              ((deposito1.getCostoDia() + deposito2.getCostoDia()) * 1);
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLon = Math.toRadians(lon2 - lon1);
         
-        String depositosIds = deposito1.getId() + "," + deposito2.getId();
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
         
-        Ruta ruta = Ruta.builder()
-                .solicitudId(solicitudId)
-                .estado("TENTATIVA")
-                .cantidadTramos(3)
-                .depositosIntermedios(depositosIds)
-                .distanciaTotal(distanciaTotal)
-                .costoTotalEstimado(costoEstimado)
-                .tiempoEstimadoHoras(tiempoTotal)
-                .estrategia("MULTIPLES_DEPOSITOS")
-                .fechaCreacion(LocalDateTime.now())
-                .observaciones("Ruta con paradas en: " + deposito1.getNombre() + ", " + deposito2.getNombre())
-                .build();
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         
-        Ruta guardada = rutaRepository.save(ruta);
-        
-        return convertirARutaDTO(guardada);
+        return RADIO_TIERRA_KM * c;
     }
     
     /**

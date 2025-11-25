@@ -72,22 +72,19 @@ public class LogisticaController {
         return ResponseEntity.ok(camiones);
     }
     
-    @PostMapping("/tramos/asignar")
+    @PostMapping("/tramos/{tramoId}/asignar")
     @Operation(summary = "Asignar camión y transportista a un tramo",
-               description = "Asigna un camión y transportista específicos a un tramo de transporte. Valida capacidad y disponibilidad. Rol: OPERADOR")
+               description = "Asigna un camión y transportista específicos a un tramo de transporte. Obtiene peso y volumen del contenedor automáticamente. Valida capacidad y disponibilidad. Rol: OPERADOR")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Camión y transportista asignados exitosamente"),
         @ApiResponse(responseCode = "404", description = "Tramo, camión o transportista no encontrado"),
         @ApiResponse(responseCode = "400", description = "Camión/transportista no disponible o sin capacidad suficiente")
     })
-    public ResponseEntity<TramoDTO> asignarCamion(@Valid @RequestBody AsignarCamionRequest request) {
-        TramoDTO tramo = logisticaService.asignarCamion(
-            request.getTramoId(), 
-            request.getCamionId(),
-            request.getTransportistaId(),
-            request.getPesoKg(),
-            request.getVolumenM3()
-        );
+    public ResponseEntity<TramoDTO> asignarCamion(
+            @Parameter(description = "ID del tramo") @PathVariable Long tramoId,
+            @Parameter(description = "ID del camión") @RequestParam Long camionId,
+            @Parameter(description = "ID del transportista") @RequestParam Long transportistaId) {
+        TramoDTO tramo = logisticaService.asignarCamion(tramoId, camionId, transportistaId);
         return ResponseEntity.ok(tramo);
     }
     

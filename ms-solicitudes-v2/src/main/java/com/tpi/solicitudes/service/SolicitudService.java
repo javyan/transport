@@ -56,8 +56,9 @@ public class SolicitudService {
         log.info("Solicitud creada con ID: {}", guardada.getId());
         
         // Integración con ms-logistica: calcular rutas automáticamente
+        List<RutaTentativaDTO> rutasCalculadas = null;
         try {
-            List<RutaTentativaDTO> rutas = logisticaClient.calcularRutasTentativas(
+            rutasCalculadas = logisticaClient.calcularRutasTentativas(
                 guardada.getId(),
                 request.getOrigenDireccion(),
                 request.getDestinoDireccion(),
@@ -65,19 +66,19 @@ public class SolicitudService {
                 request.getContenedor().getVolumenM3()
             );
             
-            // Usar la ruta DIRECTA (más simple) para estimaciones iniciales
-            if (rutas != null && !rutas.isEmpty()) {
-                RutaTentativaDTO rutaDirecta = rutas.stream()
+            // Usar la ruta DIRECTA (más simple) para estimaciones iniciales en la solicitud
+            if (rutasCalculadas != null && !rutasCalculadas.isEmpty()) {
+                RutaTentativaDTO rutaDirecta = rutasCalculadas.stream()
                         .filter(r -> "DIRECTA".equals(r.getEstrategia()))
                         .findFirst()
-                        .orElse(rutas.get(0)); // Fallback a primera ruta
+                        .orElse(rutasCalculadas.get(0)); // Fallback a primera ruta
                 
                 guardada.setCostoEstimado(rutaDirecta.getCostoTotalEstimado());
                 guardada.setTiempoEstimadoHoras(rutaDirecta.getTiempoEstimadoHoras());
                 guardada = solicitudRepository.save(guardada);
                 
-                log.info("Ruta {} calculada para solicitud {}: {}km, ${}, {}hs", 
-                        rutaDirecta.getEstrategia(), guardada.getId(), 
+                log.info("✅ {} rutas calculadas para solicitud {}. Ruta directa: {}km, ${}, {}hs", 
+                        rutasCalculadas.size(), guardada.getId(), 
                         rutaDirecta.getDistanciaTotal(), 
                         rutaDirecta.getCostoTotalEstimado(), 
                         rutaDirecta.getTiempoEstimadoHoras());
@@ -87,7 +88,7 @@ public class SolicitudService {
                     guardada.getId(), e.getMessage());
         }
         
-        return convertirASolicitudDTO(guardada);
+        return convertirASolicitudDTO(guardada, rutasCalculadas);
     }
     
     /**
@@ -398,6 +399,19 @@ public class SolicitudService {
     
     // Métodos de conversión
     private SolicitudDTO convertirASolicitudDTO(Solicitud s) {
+        return convertirASolicitudDTO(s, null);
+    }
+    
+    private SolicitudDTO convertirASolicitudDTO(Solicitud s, List<RutaTentativaDTO> rutasTentativas) {
+        // Obtener datos del contenedor si existe
+        ContenedorDTO contenedorDTO = null;
+        if (s.getContenedorId() != null) {
+            Contenedor contenedor = contenedorRepository.findById(s.getContenedorId()).orElse(null);
+            if (contenedor != null) {
+                contenedorDTO = convertirAContenedorDTO(contenedor);
+            }
+        }
+        
         return SolicitudDTO.builder()
             .id(s.getId())
             .clienteId(s.getClienteId())
@@ -412,6 +426,8 @@ public class SolicitudService {
             .fechaCreacion(s.getFechaCreacion())
             .fechaActualizacion(s.getFechaActualizacion())
             .fechaEntrega(s.getFechaEntrega())
+            .contenedor(contenedorDTO)
+            .rutasTentativas(rutasTentativas)
             .build();
     }
     
@@ -440,4 +456,24 @@ public class SolicitudService {
             .observaciones(c.getObservaciones())
             .build();
     }
+    
+    /**
+     * Obtiene todas las rutas calculadas para una solicitud
+     */
+    public List<RutaTentativaDTO> obtenerRutasSolicitud(Long solicitudId) {
+        log.info("Obteniendo rutas para solicitud {}", solicitudId);
+        
+        // Verificar que la solicitud existe
+        Solicitud solicitud = solicitudRepository.findById(solicitudId)
+            .orElseThrow(() -> new RuntimeException("Solicitud no encontrada con ID: " + solicitudId));
+        
+        // Obtener rutas desde ms-logistica
+        try {
+            return logisticaClient.listarRutasPorSolicitud(solicitudId);
+        } catch (Exception e) {
+            log.error("Error al obtener rutas de solicitud {}: {}", solicitudId, e.getMessage());
+            throw new RuntimeException("No se pudieron obtener las rutas de la solicitud", e);
+        }
+    }
 }
+

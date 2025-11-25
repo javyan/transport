@@ -28,4 +28,10 @@ public interface LogisticaClient {
      */
     @GetMapping("/api/tramos/solicitud/{solicitudId}")
     List<TramoDTO> listarTramosPorSolicitud(@PathVariable Long solicitudId);
+    
+    /**
+     * Lista todas las rutas de una solicitud (tentativas, asignadas, canceladas)
+     */
+    @GetMapping("/api/rutas/solicitud/{solicitudId}")
+    List<RutaTentativaDTO> listarRutasPorSolicitud(@PathVariable Long solicitudId);
 }
